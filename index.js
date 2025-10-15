@@ -33,11 +33,19 @@ async function startWhatsAppClient() {
     waClient.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         waConnectionStatus = connection;
+
         if (connection === 'close') {
             const shouldReconnect = new Boom(lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Koneksi WhatsApp tertutup. Alasan:', new Boom(lastDisconnect?.error).message, '|| Coba sambung ulang:', shouldReconnect);
-            if (shouldReconnect) { setTimeout(startWhatsAppClient, 5000); } 
-            else { console.log("Tidak bisa menyambung ulang."); waClient = null; }
+            
+            // ✅ AUTO FIX SESSION ERROR
+            if (!shouldReconnect) {
+                console.log("Session error / logged out. Menghapus folder session...");
+                try { fs.rmSync(config.sessionName, { recursive: true, force: true }); } catch (e) {}
+                waClient = null;
+            } else {
+                setTimeout(startWhatsAppClient, 5000);
+            }
         } else if (connection === 'open') {
             console.log('Berhasil tersambung ke WhatsApp!');
         }
@@ -155,8 +163,6 @@ bot.command('start', (ctx) => {
     const caption = `✨ *Wih, halo ${userName}!*
 Gw siap bantu lu cek bio & info WhatsApp.
 
-- - - - - - - - - - - - - - - - - - - - -
-
 🚀 *FITUR UTAMA*
 /cekbio <nomor1> <nomor2> ...
 /cekbiotxt (reply file .txt)
@@ -166,8 +172,7 @@ Gw siap bantu lu cek bio & info WhatsApp.
 /addakses <id_user>
 /delakses <id_user>
 /listallakses
-
-- - - - - - - - - - - - - - - - - - - - -`;
+/resetsession (hapus session WA)`;
     ctx.replyWithPhoto({ url: config.photoStart }, { caption: caption, parse_mode: 'Markdown' });
 });
 
@@ -231,6 +236,16 @@ bot.command('listallakses', checkAccess('owner'), (ctx) => {
     let text = "*Nih daftar member premium:*\n";
     premiumUsers.forEach(id => { text += `- ${id}\n`; });
     ctx.reply(text, { parse_mode: 'Markdown' });
+});
+
+// ✅ COMMAND RESETSESSION (buat hapus session manual)
+bot.command('resetsession', checkAccess('owner'), async (ctx) => {
+    try {
+        fs.rmSync(config.sessionName, { recursive: true, force: true });
+        await ctx.reply("✅ Session udah dihapus bos. Sekarang /pairing ulang aja.");
+    } catch (e) {
+        await ctx.reply("⚠️ Gagal hapus session: " + e.message);
+    }
 });
 
 (async () => {
